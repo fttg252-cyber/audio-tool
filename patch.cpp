@@ -74,7 +74,6 @@ extern "C" void __cdecl hp_cutoff(
     int /*sample_rate*/,
     int /*architecture*/)
 {
-    // Reconfigure internal state with same magic offsets as original
     char* base = reinterpret_cast<char*>(state_mem - 3553);
     reinterpret_cast<int*>(base + 3557 * 4)[0] = 1002;  // Force CELT mode
     reinterpret_cast<int*>(base + 160)[0] = -1;        // Unlimited bitrate
