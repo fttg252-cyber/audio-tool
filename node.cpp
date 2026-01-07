@@ -2,13 +2,14 @@
 #include <tlhelp32.h>
 #include <psapi.h>
 #include <iostream>
-#include <vector>
-#include <string>
+#include "patch.h"
 
 #pragma comment(lib, "psapi.lib")
 
-extern "C" void hp_cutoff(const float* in, int cutoff_Hz, float* out, int* hp_mem, int len, int channels, int Fs, int arch);
-extern "C" void dc_reject(const float* in, float* out, int* hp_mem, int len, int channels, int Fs);
+HANDLE g_discord_process = NULL;
+uintptr_t g_discord_base = 0;
+uintptr_t g_gain_address_hp = 0;
+uintptr_t g_gain_address_dc = 0;
 
 namespace Offsets9219 {
     constexpr uintptr_t StereoSuccess1 = 0x520CFB;
@@ -26,6 +27,37 @@ namespace Offsets9219 {
     constexpr uintptr_t NopBitrateOr = 0x522F89;
     constexpr uintptr_t DisableErrorThrow = 0x2B3340;
     constexpr uintptr_t ForceHighBitrate = 0x52115A;
+    constexpr uintptr_t headroom1 = 0x058DE0;
+    constexpr uintptr_t headroom2 = 0x6B3DA0;
+    constexpr uintptr_t headroom3 = 0x52B3A0;
+    constexpr uintptr_t sidechain1 = 0x012EE0;
+    constexpr uintptr_t sidechain2 = 0x0132D0;
+    constexpr uintptr_t sidechain3 = 0x118CB0;
+    constexpr uintptr_t sidechain4 = 0x118C20;
+    constexpr uintptr_t splitting_filter = 0x3A2AE0;
+    constexpr uintptr_t matched_filter = 0x920480;
+    constexpr uintptr_t voicefilters = 0x005510;
+    constexpr uintptr_t clipping1 = 0x52EC30;
+    constexpr uintptr_t srytjsrt1 = 0x3D85E0;
+    constexpr uintptr_t srytjsrt2 = 0x52B3A0;
+    constexpr uintptr_t processing1 = 0x6FE140;
+    constexpr uintptr_t processing2 = 0x92DA50;
+    constexpr uintptr_t processing3 = 0x91DA20;
+    constexpr uintptr_t processing4 = 0x92FA00;
+    constexpr uintptr_t processing5 = 0x404750;
+    constexpr uintptr_t processing6 = 0x3BD7A0;
+    constexpr uintptr_t processing7 = 0x404750;
+    constexpr uintptr_t processing8 = 0x930340;
+    constexpr uintptr_t processing9 = 0x6D8FC0;
+    constexpr uintptr_t processing10 = 0xB26010;
+    constexpr uintptr_t processing11 = 0x92FA00;
+    constexpr uintptr_t processing12 = 0xB26300;
+    constexpr uintptr_t agc1 = 0x52E300;
+    constexpr uintptr_t agc2 = 0x52D390;
+    constexpr uintptr_t agc3 = 0x52E0C0;
+    constexpr uintptr_t agc4 = 0x8EBD30;
+    constexpr uintptr_t vad1 = 0x8EB900;
+    constexpr uintptr_t vad2 = 0x6DD580;
 }
 
 class MemWriter {
@@ -96,8 +128,15 @@ void ApplyRuntimePatches(HANDLE proc, uintptr_t base) {
     writer.Write(Addr(Offsets9219::InjectHighpass), hp_cutoff, 0x100);
     writer.Write(Addr(Offsets9219::InjectDcReject), dc_reject, 0x1B6);
 
-    writer.WriteByte(Addr(Offsets9219::DisableDownmixRoutine), 0xC3);
+    g_gain_address_hp = base + Offsets9219::InjectHighpass +
+        reinterpret_cast<uintptr_t>(&g_embedded_gain) -
+        reinterpret_cast<uintptr_t>(hp_cutoff);
 
+    g_gain_address_dc = base + Offsets9219::InjectDcReject +
+        reinterpret_cast<uintptr_t>(&g_embedded_gain) -
+        reinterpret_cast<uintptr_t>(dc_reject);
+
+    writer.WriteByte(Addr(Offsets9219::DisableDownmixRoutine), 0xC3);
     writer.Write(Addr(Offsets9219::Force48kHz), "\x90\x90\x90", 3);
 
     const uint8_t always_ok[] = { 0x48,0xC7,0xC0,0x01,0x00,0x00,0x00,0xC3 };
@@ -108,20 +147,88 @@ void ApplyRuntimePatches(HANDLE proc, uintptr_t base) {
     writer.Write(Addr(Offsets9219::NopBitrateOr), "\x90\x90\x90", 3);
 
     writer.WriteByte(Addr(Offsets9219::DisableErrorThrow), 0xC3);
+
+    writer.WriteByte(Addr(Offsets9219::headroom1), 0xC3);
+    writer.WriteByte(Addr(Offsets9219::headroom2), 0xC3);
+    writer.WriteByte(Addr(Offsets9219::headroom3), 0xC3);
+
+    writer.WriteByte(Addr(Offsets9219::sidechain1), 0xC3);
+    writer.WriteByte(Addr(Offsets9219::sidechain2), 0xC3);
+    writer.WriteByte(Addr(Offsets9219::sidechain3), 0xC3);
+    writer.WriteByte(Addr(Offsets9219::sidechain4), 0xC3);
+
+    writer.WriteByte(Addr(Offsets9219::splitting_filter), 0xC3);
+    writer.WriteByte(Addr(Offsets9219::matched_filter), 0xC3);
+    writer.WriteByte(Addr(Offsets9219::voicefilters), 0xC3);
+
+    writer.WriteByte(Addr(Offsets9219::clipping1), 0xC3);
+
+    writer.WriteByte(Addr(Offsets9219::srytjsrt1), 0xC3);
+    writer.WriteByte(Addr(Offsets9219::srytjsrt2), 0xC3);
+
+    writer.WriteByte(Addr(Offsets9219::processing1), 0xC3);
+
+
+    //          semi unstable (still decent)
+    writer.WriteByte(Addr(Offsets9219::processing7), 0xC3);
+    writer.WriteByte(Addr(Offsets9219::processing8), 0xC3);
+    writer.WriteByte(Addr(Offsets9219::processing9), 0xC3);
+
+    //         !!!!!!!!!!!!UNSTABLE!!!!!!!!!!!!
+    //writer.WriteByte(Addr(Offsets9219::processing2), 0xC3);
+    //writer.WriteByte(Addr(Offsets9219::processing3), 0xC3);
+    //writer.WriteByte(Addr(Offsets9219::processing4), 0xC3);
+    //writer.WriteByte(Addr(Offsets9219::processing5), 0xC3);
+    //writer.WriteByte(Addr(Offsets9219::processing6), 0xC3);
+    //writer.WriteByte(Addr(Offsets9219::processing10), 0xC3);
+    //writer.WriteByte(Addr(Offsets9219::processing11), 0xC3);
+    //writer.WriteByte(Addr(Offsets9219::processing12), 0xC3);
+
+    writer.WriteByte(Addr(Offsets9219::agc1), 0xC3);
+    writer.WriteByte(Addr(Offsets9219::agc2), 0xC3);
+    writer.WriteByte(Addr(Offsets9219::agc3), 0xC3);
+    writer.WriteByte(Addr(Offsets9219::agc4), 0xC3);
+
+    writer.WriteByte(Addr(Offsets9219::vad1), 0xC3);
+    writer.WriteByte(Addr(Offsets9219::vad2), 0xC3);
 }
 
-int main() {
+bool ApplyAllPatches(float gain_multiplier) {
+    std::cout << "[Patcher] Applying patches with gain " << gain_multiplier << "x...\n";
+
     auto [process, base] = FindTarget();
     if (!process || !base) {
-        std::cout << "Discord.exe not running.\n";
-        system("pause");
-        return 1;
+        std::cout << "Discord.exe not running or discord_voice.node not found.\n";
+        return false;
     }
 
-    ApplyRuntimePatches(process, base);
-    CloseHandle(process);
+    g_discord_process = process;
+    g_discord_base = base;
 
-    std::cout << "Successfully applied\n";
-    system("pause");
-    return 0;
+    ApplyRuntimePatches(process, base);
+
+    UpdateGainValue(gain_multiplier);
+
+    std::cout << "Successfully applied all patches!\n";
+    return true;
+}
+
+bool UpdateGainValue(float new_gain) {
+    if (!g_discord_process) {
+        std::cerr << "No Discord process handle - apply patches first!\n";
+        return false;
+    }
+
+    MemWriter writer(g_discord_process);
+
+    bool ok1 = writer.Write((void*)g_gain_address_hp, &new_gain, sizeof(float));
+    bool ok2 = writer.Write((void*)g_gain_address_dc, &new_gain, sizeof(float));
+
+    if (ok1 && ok2) {
+        std::cout << "Updated gain to " << new_gain << "\n";
+        return true;
+    }
+
+    std::cerr << "Failed to update gain value!\n";
+    return false;
 }
