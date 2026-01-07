@@ -1,5 +1,5 @@
-// Adjustable gain scaling factor
-#define GAIN_SCALE 32767
+#include "patch.h"
+#include <iostream>
 
 using i8 = signed char;
 using i16 = short;
@@ -10,26 +10,18 @@ using u16 = unsigned short;
 using u32 = unsigned int;
 using u64 = unsigned long long;
 
+float g_embedded_gain = 1.0f;
+
 template<typename T>
 struct PackedResult {
     u64 storage = 0;
-
     constexpr T extract(u8 index) const {
         constexpr u8 elem_bits = sizeof(T) * 8;
         return static_cast<T>(storage >> (index * elem_bits));
     }
-
     constexpr void pack(u32 a) { storage = a; }
-    constexpr void pack(u32 a, u32 b) { storage = static_cast<u64>(a) | (static_cast<u64>(b) << 32); }
-    constexpr void pack(u16 a, u16 b, u16 c, u16 d) {
-        storage = static_cast<u64>(a) | (static_cast<u64>(b) << 16) |
-            (static_cast<u64>(c) << 32) | (static_cast<u64>(d) << 48);
-    }
-    constexpr void pack(u8 a, u8 b, u8 c, u8 d, u8 e, u8 f, u8 g, u8 h) {
-        storage = static_cast<u64>(a) | (static_cast<u64>(b) << 8) |
-            (static_cast<u64>(c) << 16) | (static_cast<u64>(d) << 24) |
-            (static_cast<u64>(e) << 32) | (static_cast<u64>(f) << 40) |
-            (static_cast<u64>(g) << 48) | (static_cast<u64>(h) << 56);
+    constexpr void pack(u32 a, u32 b) {
+        storage = static_cast<u64>(a) | (static_cast<u64>(b) << 32);
     }
 };
 
@@ -42,7 +34,6 @@ constexpr T unpack_value(u8 idx) {
 constexpr PackedResult<u32> find_best_fraction() {
     constexpr float target = 10.0f;
     constexpr float max_error = 0.1f;
-
     for (u32 den = 1; den <= 10; ++den) {
         for (u32 num = 1; num <= 10; ++num) {
             float approx = static_cast<float>(num) / den;
@@ -54,7 +45,6 @@ constexpr PackedResult<u32> find_best_fraction() {
             }
         }
     }
-
     PackedResult<u32> fallback;
     fallback.pack(2, 1);
     return fallback;
@@ -75,13 +65,13 @@ extern "C" void __cdecl hp_cutoff(
     int /*architecture*/)
 {
     char* base = reinterpret_cast<char*>(state_mem - 3553);
-    reinterpret_cast<int*>(base + 3557 * 4)[0] = 1002;  // Force CELT mode
-    reinterpret_cast<int*>(base + 160)[0] = -1;        // Unlimited bitrate
-    reinterpret_cast<int*>(base + 164)[0] = -1;        // User bitrate override
-    reinterpret_cast<int*>(base + 184)[0] = 0;         // Disable DTX
+    reinterpret_cast<int*>(base + 3557 * 4)[0] = 1002;
+    reinterpret_cast<int*>(base + 160)[0] = -1;
+    reinterpret_cast<int*>(base + 164)[0] = -1;
+    reinterpret_cast<int*>(base + 184)[0] = 0;
 
     const int total_samples = sample_count * channel_count;
-    const float scale = static_cast<float>(channel_count + GAIN_SCALE);
+    const float scale = static_cast<float>(channel_count) + g_embedded_gain;
 
     for (int i = 0; i < total_samples; ++i) {
         output[i] = input[i] * scale;
@@ -103,9 +93,22 @@ extern "C" void __cdecl dc_reject(
     reinterpret_cast<int*>(base + 184)[0] = 0;
 
     const int total_samples = frame_size * num_channels;
-    const float scale = static_cast<float>(num_channels + GAIN_SCALE);
+    const float scale = static_cast<float>(num_channels) + g_embedded_gain;
 
     for (int i = 0; i < total_samples; ++i) {
         dst[i] = src[i] * scale;
     }
+}
+
+uintptr_t FindGainOffset(void* func_start, size_t func_size) {
+    uint8_t* bytes = (uint8_t*)func_start;
+    float search_val = 30.0f;
+    uint32_t search_pattern = *(uint32_t*)&search_val;
+
+    for (size_t i = 0; i < func_size - 4; i++) {
+        if (*(uint32_t*)(bytes + i) == search_pattern) {
+            return i;
+        }
+    }
+    return 0;
 }
