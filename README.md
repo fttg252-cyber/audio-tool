@@ -3,7 +3,7 @@ WARNING: USE AT YOUR OWN RISK
 This tool patches Discord's voice engine (discord_voice.node) to unlock higher audio quality features that are normally restricted. It may violate Discord's Terms of Service.
 What's New in v2.0.0
 
-Graphical User Interface (GUI): The tool now features a simple, user-friendly GUI built with Dear ImGui for easy patching and control.
+Graphical User Interface (GUI): The tool now features a simple, user friendly GUI built with Dear ImGui for easy patching and control.
 
 What it does (tested on Discord node version 1.0.9217)
 
