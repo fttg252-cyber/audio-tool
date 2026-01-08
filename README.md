@@ -42,7 +42,7 @@ Build Instructions
 Install Visual Studio 2022
 Download from: https://visualstudio.microsoft.com/downloads/
 Select the Desktop development with C++ workload during installation.
-Clone the repository (recommended)textgit clone https://github.com/fttg252-cyber/audio-tool.gitOr download as ZIP and extract.
+Clone the repository (recommended)text git clone https://github.com/fttg252-cyber/audio-tool.git Or download as ZIP and extract.
 Open the project
 The repository now includes all necessary files: node.cpp, patch.cpp, gui.cpp, and the ImGui + GLAD dependencies (in folders imgui/ and glad/).
 Create a new Empty C++ Project in Visual Studio.
